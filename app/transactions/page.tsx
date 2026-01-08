@@ -53,7 +53,7 @@ export default function TransactionsPage() {
         matches &&
         (tx.transaction_id.toLowerCase().includes(searchTerm) ||
           tx.merchant_id.toLowerCase().includes(searchTerm) ||
-          tx.storeId?.toLowerCase().includes(searchTerm) ||
+          tx.store_id.toLowerCase().includes(searchTerm) ||
           tx.terminal_id.toLowerCase().includes(searchTerm) ||
           tx.status.toLowerCase().includes(searchTerm) ||
           tx.paymentMethod.toLowerCase().includes(searchTerm));

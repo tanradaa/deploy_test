@@ -63,10 +63,10 @@ export default function UserFilterBar({
         <Select onValueChange={(v) => onStoreChange?.(v)}>
           <SelectTrigger className="w-[200px]">
             <Store size={18} />
-            <SelectValue placeholder="All Stores" />
+            <SelectValue placeholder="All Branch" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Stores</SelectItem>
+            <SelectItem value="all">All Branch</SelectItem>
             {storeOptions.map((s) => (
               <SelectItem key={s} value={s}>
                 {s}

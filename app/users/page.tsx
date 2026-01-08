@@ -121,7 +121,7 @@ export default function UserManagementPage() {
     setOpenEdit(true);
   };
 
-  // 🔒 RBAC Guard
+  // RBAC Guard
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
 
@@ -160,15 +160,19 @@ export default function UserManagementPage() {
   }, []);
 
   // Filter Logic
+  // Filter Logic
   useEffect(() => {
     let result = [...users];
 
     if (search) {
-      result = result.filter((u) =>
-        `${u.first_name} ${u.last_name} ${u.email}`
+      const lowerSearch = search.toLowerCase();
+      result = result.filter((u) => {
+        const roleDisplay = roleLabelMap[u.role] || "";
+
+        return `${u.first_name} ${u.last_name} ${u.email} ${u.role} ${roleDisplay} ${u.store_branches} ${u.status}`
           .toLowerCase()
-          .includes(search.toLowerCase())
-      );
+          .includes(lowerSearch);
+      });
     }
 
     if (role !== "all") result = result.filter((u) => u.role === role);

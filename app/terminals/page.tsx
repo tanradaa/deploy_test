@@ -23,7 +23,7 @@ export default function TerminalPage() {
 
   const [filters, setFilters] = useState({
     status: "All",
-    store: "All Stores",
+    store: "All Branch",
     search: "",
   });
 
@@ -65,7 +65,7 @@ export default function TerminalPage() {
       const arr = Array.from(terminalsMap.values());
       setAllTerminals(arr);
       setFilteredTerminals(arr);
-      setStoreOptions(["All Stores", ...storeNames]);
+      setStoreOptions(["All Branch", ...storeNames]); 
     }
     load();
   }, []);
@@ -75,15 +75,19 @@ export default function TerminalPage() {
     let result = allTerminals;
     if (filters.status !== "All")
       result = result.filter((t) => t.terminalStatus === filters.status);
-    if (filters.store !== "All Stores")
+    
+    if (filters.store !== "All Branch") 
       result = result.filter((t) => t.storeId === filters.store);
+    
     if (filters.search) {
       const lowerSearch = filters.search.toLowerCase();
       result = result.filter(
         (t) =>
           t.terminal_id.toLowerCase().includes(lowerSearch) ||
           (t.serial && t.serial.toLowerCase().includes(lowerSearch)) ||
-          (t.model && t.model.toLowerCase().includes(lowerSearch))
+          (t.model && t.model.toLowerCase().includes(lowerSearch)) ||
+          (t.storeId && t.storeId.toLowerCase().includes(lowerSearch)) ||
+          (t.terminalStatus && t.terminalStatus.toLowerCase().includes(lowerSearch))
       );
     }
     setFilteredTerminals(result);
@@ -156,7 +160,7 @@ export default function TerminalPage() {
           </div>
         </div>
       </div>
-
+      
       {/* Mobile Sidebar */}
       <div
         className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 md:hidden ${
