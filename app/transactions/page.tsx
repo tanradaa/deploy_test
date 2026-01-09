@@ -15,13 +15,12 @@ interface Store {
 
 export default function TransactionsPage() {
   const router = useRouter();
-
-  // State Mobile Filter Sidebar
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [showMobileFilter, setShowMobileFilter] = useState(false);
 
   const [filters, setFilters] = useState({
     date: "",
-    store: "All Stores",
+    store: "",
     status: "All Status",
     terminal: "",
     search: "",
@@ -29,12 +28,8 @@ export default function TransactionsPage() {
 
   const [stores, setStores] = useState<Store[]>([]);
   const [terminalOption, setTerminalOption] = useState<string[]>([]);
-
-  const [summary, setSummary] = useState({
-    totalAmount: 0,
-    successTransactions: 0,
-    totalTransactions: 0,
-    successRate: 0,
+  // State ข้อมูลที่ดึงมาจาก API (Summary ของ API)
+  const [apiSummary, setApiSummary] = useState({
     terminalsOnline: "0 / 0",
   });
 
@@ -42,41 +37,143 @@ export default function TransactionsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // Filter Logic
+  // load user
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      setCurrentUser(JSON.parse(storedUser));
+    } else {
+      router.push("/login");
+    }
+  }, [router]);
+
+  // load stores from role
+  useEffect(() => {
+    if (!currentUser) return;
+
+    async function loadStores() {
+      const allStores = await getStores();
+      let authorizedStores: any[] = [];
+
+      if (currentUser.role === "admin") {
+        // Admin
+        authorizedStores = allStores;
+      } else {
+        // User (branch ตัวเอง)
+        const userBranches = currentUser.store_branches || [];
+        authorizedStores = allStores.filter((s: any) =>
+          userBranches.includes(s.id)
+        );
+      }
+
+      setStores(authorizedStores);
+
+      // Set Default Filter
+      if (authorizedStores.length > 1) {
+        setFilters((p) => ({ ...p, store: "All Branch" }));
+      } else if (authorizedStores.length === 1) {
+        setFilters((p) => ({ ...p, store: authorizedStores[0].id }));
+      }
+    }
+    loadStores();
+  }, [currentUser]);
+
+  // Fetch Transactions (Aggregation Logic)
+  useEffect(() => {
+    if (!currentUser || !filters.store) return;
+
+    async function fetchData() {
+      setCurrentPage(1);
+
+      let targetStoreIds: string[] = [];
+
+      // Logic select ID
+      if (filters.store === "All Branch") {
+        if (currentUser.role === "admin") {
+          const allStores = await getStores();
+          targetStoreIds = allStores.map((s: any) => s.id);
+        } else {
+          targetStoreIds = currentUser.store_branches || [];
+        }
+      } else {
+        targetStoreIds = [filters.store];
+      }
+
+      let combinedTransactions: any[] = [];
+      let totalOnline = 0;
+      let totalTerminals = 0;
+
+      for (const id of targetStoreIds) {
+        const res = await getStoreData(id);
+        if (res) {
+          const txList = (res.transactions || []).map((t: any) => ({
+            ...t,
+            store_id: t.store_id || id,
+          }));
+          combinedTransactions = [...combinedTransactions, ...txList];
+
+          // รวม Terminal Counts
+          const [on, tot] = (res.summary.terminalsOnline || "0 / 0")
+            .split(" / ")
+            .map(Number);
+          totalOnline += on || 0;
+          totalTerminals += tot || 0;
+        }
+      }
+
+      combinedTransactions.sort(
+        (a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime()
+      );
+
+      setTransactions(combinedTransactions);
+      setApiSummary({
+        terminalsOnline: `${totalOnline} / ${totalTerminals}`,
+      });
+
+      const uniqueTerminals = Array.from(
+        new Set(combinedTransactions.map((t) => t.terminal_id))
+      );
+      setTerminalOption(["All Terminals", ...uniqueTerminals]);
+    }
+
+    fetchData();
+  }, [filters.store, currentUser]);
+
   const filteredTransactions = transactions.filter((tx) => {
     let matches = true;
 
-    // 1. Search
+    // Search
     if (filters.search) {
       const searchTerm = filters.search.toLowerCase();
       matches =
         matches &&
         (tx.transaction_id.toLowerCase().includes(searchTerm) ||
-          tx.merchant_id.toLowerCase().includes(searchTerm) ||
-          tx.store_id.toLowerCase().includes(searchTerm) ||
+          (tx.merchant_id && tx.merchant_id.toLowerCase().includes(searchTerm)) ||
+          (tx.store_id && tx.store_id.toLowerCase().includes(searchTerm)) ||
           tx.terminal_id.toLowerCase().includes(searchTerm) ||
           tx.status.toLowerCase().includes(searchTerm) ||
           tx.paymentMethod.toLowerCase().includes(searchTerm));
     }
 
-    // 2. Status
+    // Status
     if (filters.status && filters.status !== "All Status") {
       matches =
         matches && tx.status?.toLowerCase() === filters.status.toLowerCase();
     }
 
-    // 3. Terminal
+    // Terminal
     if (filters.terminal && filters.terminal !== "All Terminals") {
       matches = matches && tx.terminal_id === filters.terminal;
     }
 
-    // 4. Date
+    // Date
     if (filters.date) {
     }
 
     return matches;
   });
 
+  // Calculate Summary from Filtered Data
   const successTx = filteredTransactions.filter((t) => t.status === "success");
 
   const filteredSummary = {
@@ -87,38 +184,6 @@ export default function TransactionsPage() {
       ? +((successTx.length / filteredTransactions.length) * 100).toFixed(2)
       : 0,
   };
-
-  // Data Loading
-  useEffect(() => {
-    getStores().then((res: Store[]) => {
-      setStores(res);
-    });
-  }, []);
-
-  useEffect(() => {
-    async function load() {
-      setCurrentPage(1);
-      const res = await getStoreData(filters.store);
-
-      if (!res) return;
-
-      setSummary(res.summary);
-      setTransactions(res.transactions || []);
-
-      const terminals: string[] = [
-        "All Terminals",
-        ...Array.from(
-          new Set<string>(
-            (res.transactions || []).map((t: any) => t.terminal_id)
-          )
-        ),
-      ];
-
-      setTerminalOption(terminals);
-    }
-
-    load();
-  }, [filters.store]);
 
   // Pagination Logic
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -137,7 +202,6 @@ export default function TransactionsPage() {
     (_, i) => startPage + i
   );
 
-  // สี Status
   const StatusBadge = ({ status }: { status: string }) => (
     <span
       className={`px-2 py-1 text-[10px] md:text-xs font-semibold rounded-full inline-block min-w-[60px] text-center
@@ -150,13 +214,6 @@ export default function TransactionsPage() {
       {status}
     </span>
   );
-
-  if (!summary)
-    return (
-      <div className="flex justify-center items-center h-80 text-gray-500">
-        Loading transaction…
-      </div>
-    );
 
   return (
     <div className="space-y-6 mx-4 md:mx-8 pb-10 relative">
@@ -181,6 +238,8 @@ export default function TransactionsPage() {
             onStatusChange={(v) => setFilters((p) => ({ ...p, status: v }))}
             onTerminalChange={(v) => setFilters((p) => ({ ...p, terminal: v }))}
             onSearchChange={(v) => setFilters((p) => ({ ...p, search: v }))}
+            // ใส่ selectedStore เพื่อให้ Dropdown แสดงค่าถูกต้อง
+            selectedStore={filters.store} 
           />
         </div>
 
@@ -191,7 +250,7 @@ export default function TransactionsPage() {
         >
           <Filter className="w-4 h-4" />
           Filters
-          {(filters.store !== "All Stores" ||
+          {(filters.store !== "All Branch" ||
             filters.status !== "All Status" ||
             filters.search !== "") && (
             <span className="w-2 h-2 rounded-full bg-red-500 absolute top-0 right-0 -mt-1 -mr-1 animate-pulse" />
@@ -199,7 +258,7 @@ export default function TransactionsPage() {
         </button>
       </div>
 
-      {/* Mobile Sidebar*/}
+      {/* Mobile Sidebar */}
       <div
         className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 md:hidden ${
           showMobileFilter
@@ -255,11 +314,12 @@ export default function TransactionsPage() {
                   isMobileStack={true}
                   storeOptions={["All Branch", ...stores.map((s) => s.id)]}
                   onStoreChange={(v) => setFilters((p) => ({ ...p, store: v }))}
+                  selectedStore={filters.store}
                 />
               </div>
             </div>
 
-            {/* 3. Date */}
+            {/* ... Date, Terminal, Status Filters (เหมือนเดิม) ... */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Date</label>
               <div className="w-full">
@@ -271,7 +331,6 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            {/* 4. Terminal */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">
                 Select Terminal
@@ -288,7 +347,6 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            {/* 5. Status */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">
                 Status
@@ -336,7 +394,8 @@ export default function TransactionsPage() {
           suffix="%"
         />
 
-        <SummaryCard title="Terminals Online" value={summary.terminalsOnline} />
+        {/* ใช้ค่าจาก apiSummary ที่รวมมาแล้ว */}
+        <SummaryCard title="Terminals Online" value={apiSummary.terminalsOnline} />
       </div>
 
       {/* Transactions View */}
@@ -375,16 +434,17 @@ export default function TransactionsPage() {
 
             <tbody className="bg-white">
               {currentItems.length > 0 ? (
-                currentItems.map((tx) => (
+                currentItems.map((tx, index) => (
                   <tr
-                    key={tx.transaction_id}
+                    // ใช้ index ผสมเพื่อให้ key unique กรณี transaction id ซ้ำข้าม store (เผื่อไว้)
+                    key={`${tx.transaction_id}-${index}`}
                     className="border-b hover:bg-gray-50 cursor-pointer transition-colors"
                     onClick={() =>
                       router.push(`/transactions/${tx.transaction_id}`)
                     }
                   >
                     <td className="p-3 text-center truncate">
-                      {tx.merchant_id}
+                      {tx.merchant_id || "-"}
                     </td>
                     <td className="p-3 text-center truncate">{tx.store_id}</td>
                     <td className="p-3 text-center truncate">
@@ -417,9 +477,9 @@ export default function TransactionsPage() {
         {/* 2. Mobile View (Card List) */}
         <div className="md:hidden space-y-3">
           {currentItems.length > 0 ? (
-            currentItems.map((tx) => (
+            currentItems.map((tx, index) => (
               <div
-                key={tx.transaction_id}
+                key={`${tx.transaction_id}-${index}`}
                 onClick={() =>
                   router.push(`/transactions/${tx.transaction_id}`)
                 }
@@ -434,7 +494,7 @@ export default function TransactionsPage() {
                     <div className="flex items-center gap-1.5">
                       <Store className="w-4 h-4 text-gray-500" />{" "}
                       <p className="font-semibold text-gray-800">
-                        {tx.store_id || "Unknown Store"}
+                        {tx.store_id || "Unknown"}
                       </p>
                     </div>
                   </div>

@@ -22,6 +22,7 @@ interface FilterBarProps {
   storeOptions?: string[];
   terminalOption?: string[];
   statusOptions?: string[];
+  selectedStore?: string;
 
   showDate?: boolean;
   showStore?: boolean;
@@ -52,6 +53,7 @@ export default function FilterBar({
   showDateQuick = false,
   showStatusOnline = false,
   isMobileStack = false,
+  selectedStore,
 
   onStoreChange,
   onSearchChange,
@@ -64,7 +66,6 @@ export default function FilterBar({
   const [filters, setFilters] = useState<{ date?: string }>({ date: "1D" });
 
   useEffect(() => {
-    onDateChange?.("1D");
   }, []);
 
   const updateFilter = (key: string, value: string) => {
@@ -109,7 +110,10 @@ export default function FilterBar({
       {/* Store Select */}
       {showStore && (
         <div className={`flex items-center gap-2 ${isMobileStack ? "w-full" : ""}`}>
-          <Select onValueChange={onStoreChange}>
+          <Select 
+            onValueChange={onStoreChange} 
+            value={selectedStore}
+          >
             <SelectTrigger className={itemWidth}>
               <div className="flex items-center gap-2 truncate">
                  <Store size={18} />

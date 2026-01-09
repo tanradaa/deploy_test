@@ -19,11 +19,11 @@ interface TerminalInfo {
 
 export default function TerminalPage() {
   const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [showMobileFilter, setShowMobileFilter] = useState(false);
-
   const [filters, setFilters] = useState({
     status: "All",
-    store: "All Branch",
+    store: "",
     search: "",
   });
 
@@ -31,16 +31,39 @@ export default function TerminalPage() {
   const [filteredTerminals, setFilteredTerminals] = useState<TerminalInfo[]>([]);
   const [storeOptions, setStoreOptions] = useState<string[]>([]);
 
-  // Load Data
+  // load user from LocalStorage
   useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      setCurrentUser(JSON.parse(storedUser));
+    } else {
+      router.push("/login");
+    }
+  }, [router]);
+
+  // Load Data & Apply Permissions
+  useEffect(() => {
+    if (!currentUser) return;
+
     async function load() {
       const stores = await getStores();
       const terminalsMap = new Map<string, TerminalInfo>();
       const storeNames: string[] = [];
+      let authorizedStores: any[] = [];
 
-      stores.forEach((store: any) => {
+      if (currentUser.role === 'admin') {
+         // Admin = all branch
+         authorizedStores = stores;
+      } else {
+         // User = เฉพาะ branch ตัวเอง
+         const userBranches = currentUser.store_branches || [];
+         authorizedStores = stores.filter((s: any) => userBranches.includes(s.id));
+      }
+
+      authorizedStores.forEach((store: any) => {
         storeNames.push(store.id);
         (store.terminals || []).forEach((terminal: any) => {
+          
           const txs = (store.transactions || [])
             .filter((tx: any) => tx.terminal_id === terminal.terminal_id)
             .sort(
@@ -48,6 +71,7 @@ export default function TerminalPage() {
                 new Date(b.datetime).getTime() - new Date(a.datetime).getTime()
             );
           const lastTx = txs[0];
+
           terminalsMap.set(terminal.terminal_id, {
             terminal_id: terminal.terminal_id,
             storeId: store.id,
@@ -65,20 +89,33 @@ export default function TerminalPage() {
       const arr = Array.from(terminalsMap.values());
       setAllTerminals(arr);
       setFilteredTerminals(arr);
-      setStoreOptions(["All Branch", ...storeNames]); 
+      
+      if (storeNames.length > 1) {
+        setStoreOptions(["All Branch", ...storeNames]);
+        setFilters(prev => ({ ...prev, store: "All Branch" }));
+      } else if (storeNames.length === 1) {
+        setStoreOptions(storeNames);
+        setFilters(prev => ({ ...prev, store: storeNames[0] }));
+      } else {
+        setStoreOptions([]);
+      }
     }
     load();
-  }, []);
+  }, [currentUser]);
 
-  // Filter Logic
+  // Client-Side Filter Logic
   useEffect(() => {
     let result = allTerminals;
+
+    // Filter Status
     if (filters.status !== "All")
       result = result.filter((t) => t.terminalStatus === filters.status);
     
-    if (filters.store !== "All Branch") 
+    // Filter Store
+    if (filters.store && filters.store !== "All Branch") 
       result = result.filter((t) => t.storeId === filters.store);
     
+    // Filter Search
     if (filters.search) {
       const lowerSearch = filters.search.toLowerCase();
       result = result.filter(
@@ -126,6 +163,7 @@ export default function TerminalPage() {
               onStatusOnlineChange={(v) =>
                 setFilters((p) => ({ ...p, status: v }))
               }
+              selectedStore={filters.store}
             />
           </div>
 
@@ -208,6 +246,7 @@ export default function TerminalPage() {
                   isMobileStack={true}
                   storeOptions={storeOptions}
                   onStoreChange={(v) => setFilters((p) => ({ ...p, store: v }))}
+                  selectedStore={filters.store}
                 />
               </div>
             </div>
@@ -236,7 +275,7 @@ export default function TerminalPage() {
         </div>
       </div>
 
-      {/* Terminal Grid (New Design) */}
+      {/* Terminal Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredTerminals.map((t, index) => (
           <div

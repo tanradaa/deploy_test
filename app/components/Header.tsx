@@ -44,7 +44,7 @@ export default function Header({ title }: { title: string }) {
 
   const buildNotifications = (stores: Store[]): Notification[] => {
     return stores.flatMap((store) =>
-      store.transactions.map((tx) => ({
+      (store.transactions || []).map((tx) => ({
         id: tx.transaction_id,
         title: tx.status === "success" ? "Payment Success!" : "Payment Failed",
         message: `ID: ${tx.transaction_id}
@@ -58,8 +58,29 @@ Amount: ฿${Number(tx.amount).toLocaleString()}`,
   };
 
   const loadNotifications = debounce(async () => {
-    const stores: Store[] = await getStores();
-    const noti = buildNotifications(stores);
+    // อ่าน User จาก LocalStorage
+    const storedUser = localStorage.getItem("user");
+    if (!storedUser) return;
+    const currentUser = JSON.parse(storedUser);
+
+    // ดึงข้อมูล Stores ทั้งหมด
+    const allStores: Store[] = await getStores();
+    let authorizedStores: Store[] = [];
+
+    // Filter Stores ตามสิทธิ์ User
+    if (currentUser.role === "admin") {
+      // Admin เห็น Notification ของทุกสาขา
+      authorizedStores = allStores;
+    } else {
+      // User เห็นเฉพาะสาขาที่ดูแล (store_branches)
+      const userBranches = currentUser.store_branches || [];
+      authorizedStores = allStores.filter((store) =>
+        userBranches.includes(store.id)
+      );
+    }
+
+    // สร้าง Notification
+    const noti = buildNotifications(authorizedStores);
 
     noti.sort(
       (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()
@@ -97,7 +118,7 @@ Amount: ฿${Number(tx.amount).toLocaleString()}`,
           className="relative focus:outline-none p-1 rounded-full hover:bg-gray-100 transition-colors"
         >
           <Bell className="w-6 h-6 md:w-7 md:h-7 cursor-pointer text-gray-700" />
-          
+
           {notifications.length > 0 && (
             <span className="absolute -top-2.5 -right-2.5 bg-red-500 text-white text-[10px] md:text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] flex items-center justify-center border-2 border-white shadow-sm">
               {notifications.length > 99 ? "99+" : notifications.length}
